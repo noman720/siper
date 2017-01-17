@@ -7,6 +7,7 @@ package com.noman.android.sip.activity;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.ActivityManager;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.BroadcastReceiver;
@@ -19,7 +20,9 @@ import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.support.v4.content.LocalBroadcastManager;
@@ -48,6 +51,7 @@ import com.noman.android.sip.util.PreferenceUtil;
 import com.noman.android.sip.util.Protocol;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Handles all calling, receiving calls, and UI interaction in the AndroidSIP app.
@@ -72,11 +76,15 @@ public class MainActivity extends Activity implements View.OnTouchListener {
     private Button btnSipAccount;
     private Button btnSipRegister;
 
+    private Handler mHandler;
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        mHandler = new Handler();
 
         //check permission
         checkAllPermissions();
@@ -649,12 +657,50 @@ public class MainActivity extends Activity implements View.OnTouchListener {
             //now registered, so state change to unregister
             btnPhoneAccount.setBackgroundColor(Color.RED);
             btnPhoneAccount.setText("Unregister phone account");
+
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    openPhoneAccountSettingsActivity();
+                }
+            }, 2000);
         }else {
             //now unregistered, so state change to register
             btnPhoneAccount.setBackgroundColor(Color.GREEN);
             btnPhoneAccount.setText("Register phone account");
         }
+
     }
+
+
+    private void openPhoneAccountSettingsActivity(){
+
+        //check the current activity name
+        /*ActivityManager am = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
+        List<ActivityManager.RunningTaskInfo> taskInfo = am.getRunningTasks(1);
+        Log.d(TAG, "CURRENT Activity ::" + taskInfo.get(0).topActivity.getClassName());*/
+
+
+        //open setting activity to enable account manually
+        final Intent sipSettingsIntent = new Intent();
+        final String sipSettingsComponentName;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//            sipSettingsComponentName = "com.android.phone/.settings.PhoneAccountSettingsActivity";
+            sipSettingsComponentName = "com.android.server.telecom/.settings.EnableAccountPreferenceActivity";
+        } else {
+            sipSettingsComponentName = "com.android.phone/.sip.SipSettings";
+        }
+        final ComponentName sipSettingsComponent = ComponentName.unflattenFromString(sipSettingsComponentName);
+        sipSettingsIntent.setComponent(sipSettingsComponent);
+        sipSettingsIntent.setAction("android.intent.action.MAIN");
+        sipSettingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(sipSettingsIntent);
+        } catch(final Exception e) {
+            Log.e(TAG, "Error starting intent", e);
+        }
+    }
+
 
     private void updateSIPAccountButtonStatus(){
         boolean hasSipAccount = PreferenceUtil.hasSipAccount();
