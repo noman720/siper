@@ -43,8 +43,8 @@ import android.widget.Toast;
 import com.noman.android.sip.R;
 import com.noman.android.sip.model.SipUser;
 import com.noman.android.sip.preferences.SipSettings;
+import com.noman.android.sip.service.SIPerConnectionService;
 import com.noman.android.sip.service.SipService;
-import com.noman.android.sip.service.SipTelConnectionService;
 import com.noman.android.sip.util.Helper;
 import com.noman.android.sip.util.Messages;
 import com.noman.android.sip.util.PreferenceUtil;
@@ -69,7 +69,10 @@ public class MainActivity extends Activity implements View.OnTouchListener {
     private static final int CALL_ADDRESS = 1;
     private static final int SET_AUTH_INFO = 2;
     private static final int UPDATE_SETTINGS_DIALOG = 3;
-//    private static final int HANG_UP = 4;
+    private static final int SET_DEFAULT = 4;
+//    private static final int HANG_UP = 5;
+
+    private static final int REQUEST_CODE_SET_DEFAULT_DIALER = 1;
 
     //UI components
     private Button btnPhoneAccount;
@@ -249,13 +252,26 @@ public class MainActivity extends Activity implements View.OnTouchListener {
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        printCurrentActivity();
+    }
+
+    @Override
     public void onResume(){
         super.onResume();
-
+        printCurrentActivity();
         // When we get back from the preference setting Activity, assume
         // settings have changed, and re-login with new auth info.
 //        initializeManager();
 
+    }
+
+    private void printCurrentActivity(){
+        //check the current activity name
+        ActivityManager am = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
+        List<ActivityManager.RunningTaskInfo> taskInfo = am.getRunningTasks(1);
+        Log.d(TAG, "CURRENT Activity ::" + taskInfo.get(0).topActivity.getClassName());
     }
 
     @Override
@@ -376,7 +392,7 @@ public class MainActivity extends Activity implements View.OnTouchListener {
      */
     public void initiateCall() {
 //        placeCall();
-//        sendIncomingCallIntent(getApplicationContext(), null, VideoProfile.STATE_AUDIO_ONLY);
+//        fireIncomingCall(getApplicationContext(), null, VideoProfile.STATE_AUDIO_ONLY);
         SipService.outgoingCall(getApplicationContext(), sipAddress);
 //        SipService.incomingCall(getApplicationContext(), null);
 //        SipService.checkCallingAccounts(getApplicationContext());
@@ -461,7 +477,7 @@ public class MainActivity extends Activity implements View.OnTouchListener {
 //        updateStatus(useName + "@" + call.getPeerProfile().getSipDomain());
 //
 //        //show native sipAudioCall screen here
-////        sendIncomingCallIntent(getApplicationContext(), Uri.parse(call.getPeerProfile().getUriString()), VideoProfile.STATE_AUDIO_ONLY);
+////        fireIncomingCall(getApplicationContext(), Uri.parse(call.getPeerProfile().getUriString()), VideoProfile.STATE_AUDIO_ONLY);
 //    }
 
     /**
@@ -487,6 +503,7 @@ public class MainActivity extends Activity implements View.OnTouchListener {
     public boolean onCreateOptionsMenu(Menu menu) {
         menu.add(0, CALL_ADDRESS, 0, "Call someone");
         menu.add(0, SET_AUTH_INFO, 0, "Edit your SIP Info.");
+        menu.add(0, SET_DEFAULT, 0, "Set Default");
 //        menu.add(0, HANG_UP, 0, "End Current Call.");
 
         return true;
@@ -500,6 +517,9 @@ public class MainActivity extends Activity implements View.OnTouchListener {
                 break;
             case SET_AUTH_INFO:
                 updatePreferences();
+                break;
+            case SET_DEFAULT:
+                setDefault();
                 break;
 //            case HANG_UP:
 //                if(sipAudioCall != null) {
@@ -571,6 +591,14 @@ public class MainActivity extends Activity implements View.OnTouchListener {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         Log.d(TAG, "requestCode: "+requestCode+" | resultCode:"+resultCode);
+        if (requestCode == REQUEST_CODE_SET_DEFAULT_DIALER) {
+            if (resultCode == RESULT_OK) {
+                Toast.makeText(getApplicationContext(), "User accepted request to become default dialer", Toast.LENGTH_LONG).show();
+            } else if (resultCode == RESULT_CANCELED) {
+                Toast.makeText(getApplicationContext(), "User declined request to become default dialer", Toast.LENGTH_LONG).show();
+            }
+        }
+
         updateAccountConfiguration();
     }
 
@@ -607,14 +635,14 @@ public class MainActivity extends Activity implements View.OnTouchListener {
      */
     public void sendIncomingCallIntent(Context context, Uri handle, int videoState) {
         PhoneAccountHandle phoneAccount = new PhoneAccountHandle(
-                new ComponentName(context, SipTelConnectionService.class),
+                new ComponentName(context, SIPerConnectionService.class),
                 "CALL_PROVIDER_ID");
         // For the purposes of testing, indicate whether the incoming sipAudioCall is a video sipAudioCall by
         // stashing an indicator in the EXTRA_INCOMING_CALL_EXTRAS.
         Bundle extras = new Bundle();
-//        extras.putInt(SipTelConnectionService.EXTRA_START_VIDEO_STATE, videoState);
+//        extras.putInt(SIPerConnectionService.EXTRA_START_VIDEO_STATE, videoState);
         if (handle != null) {
-            extras.putParcelable(SipTelConnectionService.EXTRA_HANDLE, handle);
+            extras.putParcelable(SIPerConnectionService.EXTRA_HANDLE, handle);
         }
 //        TelecomManager.from(context).addNewIncomingCall(phoneAccount, extras);
         final TelecomManager telecomManager =
@@ -633,7 +661,7 @@ public class MainActivity extends Activity implements View.OnTouchListener {
         Icon icon = Icon.createWithResource(getPackageResourcePath(), R.drawable.icon);
         telecomManager.registerPhoneAccount(PhoneAccount.builder(
                 new PhoneAccountHandle(
-                        new ComponentName(context, SipTelConnectionService.class),
+                        new ComponentName(context, SIPerConnectionService.class),
                         "CALL_PROVIDER_ID"),
                 "SIPer")
                 .setAddress(Uri.parse(sipUriString))
@@ -664,6 +692,7 @@ public class MainActivity extends Activity implements View.OnTouchListener {
                     openPhoneAccountSettingsActivity();
                 }
             }, 2000);
+
         }else {
             //now unregistered, so state change to register
             btnPhoneAccount.setBackgroundColor(Color.GREEN);
@@ -674,6 +703,10 @@ public class MainActivity extends Activity implements View.OnTouchListener {
 
 
     private void openPhoneAccountSettingsActivity(){
+
+        if (SipService.isEnabledCallingAccount(getApplicationContext())){
+            return;
+        }
 
         //check the current activity name
         /*ActivityManager am = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
@@ -699,6 +732,11 @@ public class MainActivity extends Activity implements View.OnTouchListener {
         } catch(final Exception e) {
             Log.e(TAG, "Error starting intent", e);
         }
+
+
+        //put SMS to test
+//        SMSUtils.putSMS(getApplicationContext());
+
     }
 
 
@@ -730,4 +768,9 @@ public class MainActivity extends Activity implements View.OnTouchListener {
         }
     }
 
+    private void setDefault() {
+        final Intent intent = new Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER);
+        intent.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME, this.getPackageName());
+        startActivityForResult(intent, REQUEST_CODE_SET_DEFAULT_DIALER);
+    }
 }

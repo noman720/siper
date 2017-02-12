@@ -34,7 +34,9 @@
     <uses-permission android:name="android.permission.REGISTER_SIM_SUBSCRIPTION" />
     <uses-permission android:name="android.permission.WRITE_CALL_LOG" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.PROCESS_OUTGOING_CALLS" />
 
     <uses-feature
         android:name="android.hardware.sip.voip"
@@ -54,8 +56,10 @@
             android:configChanges="orientation|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
+                <action android:name="android.intent.action.DIAL" />
+                <action android:name="android.intent.action.CALL_PRIVILEGED" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <activity
@@ -63,11 +67,21 @@
             android:label="SIP Account Configuration" />
 
         <receiver
+            android:name=".receiver.OutgoingCall"
+            android:enabled="true"
+            android:permission="android.permission.PROCESS_OUTGOING_CALLS">
+            <intent-filter android:priority="1">
+                <action android:name="android.intent.action.NEW_OUTGOING_CALL"/>
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".receiver.IncomingCallReceiver"
             android:label="Call Receiver" />
 
         <service
-            android:name=".service.SipTelConnectionService"
+            android:name=".service.SIPerConnectionService"
             android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">
             <intent-filter>
                 <action android:name="android.telecom.ConnectionService" />

@@ -26,6 +26,7 @@ import android.util.Log;
 import com.example.android.sip.WalkieTalkieActivity;
 import com.noman.android.sip.activity.MainActivity;
 import com.noman.android.sip.service.SipService;
+import com.noman.android.sip.util.Protocol;
 
 /**
  * Listens for incoming SIP calls, intercepts and hands them off to WalkieTalkieActivity.
@@ -43,7 +44,7 @@ public class IncomingCallReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         //got incoming call, pass it to service
         Log.d(TAG, "Incoming call.....");
-        SipService.incomingCall(context, intent);
+        SipService.sipIncomingCall(context, intent);
 
 //        SipAudioCall incomingCall = null;
 //        try {

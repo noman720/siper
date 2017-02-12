@@ -13,7 +13,6 @@ import android.content.Intent;
 import android.content.Context;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 import android.net.sip.SipAudioCall;
@@ -21,6 +20,8 @@ import android.net.sip.SipException;
 import android.net.sip.SipManager;
 import android.net.sip.SipProfile;
 import android.net.sip.SipRegistrationListener;
+import android.net.sip.SipSession;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -35,12 +36,16 @@ import android.widget.Toast;
 
 import com.noman.android.sip.R;
 import com.noman.android.sip.receiver.IncomingCallReceiver;
+import com.noman.android.sip.util.CallIntentBuilder;
 import com.noman.android.sip.util.Messages;
 import com.noman.android.sip.util.PreferenceUtil;
 import com.noman.android.sip.util.Protocol;
 
 import java.text.ParseException;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * An {@link IntentService} subclass for handling asynchronous task requests in
@@ -51,7 +56,7 @@ import java.util.Arrays;
  */
 public class SipService extends IntentService {
 
-    private static final String TAG = "SipService";
+    private static final String TAG = "TelecomSipService";
 
     private static final String EXTRA_SIP_USER = "com.noman.android.sip.service.extra.SIP_USER";
     private static final String EXTRA_SIP_DOMAIN = "com.noman.android.sip.service.extra.SIP_DOMAIN";
@@ -59,9 +64,13 @@ public class SipService extends IntentService {
     private static final String EXTRA_CALLING_ACC_NAME = "com.noman.android.sip.service.extra.CALLING_ACC_NAME";
     private static final String EXTRA_CALLING_ACC_DESC = "com.noman.android.sip.service.extra.CALLING_ACC_DESC";
     private static final String EXTRA_REMOTE_PEER = "com.noman.android.sip.service.extra.REMOTE_PEER";
+    private static final String EXTRA_CALL_ID = "com.noman.android.sip.service.extra.CALL_ID";
+
+    private Context mContext = null;
 
     public SipService() {
         super("SipService");
+        mContext = this;
     }
 
     /**
@@ -138,147 +147,171 @@ public class SipService extends IntentService {
     }
 
 
+    private static final List<SipAudioCall> mCalls = new ArrayList<>();
+    private static final Map<SipAudioCall, String> sipAudioCallMap = new HashMap<>();
+    private static final Map<String, SipAudioCall> callIdMap = new HashMap<>();
+
+
     /**
      * Static helper method for incoming call
      * @param context
      * @param incomingCallIntent
      */
-    private static BroadcastReceiver callScreenEventsReceiver = null;
-    public static void incomingCall(final Context context, Intent incomingCallIntent) {
+    private BroadcastReceiver mCallScreenEventsReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Log.d(TAG, "callScreenEventsReceiver: received!");
+            int action = intent.getIntExtra(Messages.TAG_TEL_TO_SIP_ACTION, -1);
+            String callId = intent.getStringExtra(Messages.TAG_TEL_TO_SIP_CALL_ID);
+            Log.d(TAG, "callScreenEventsReceiver: callId: "+callId);
+            SipAudioCall sipAudioCall = callIdMap.get(callId);
+            if (sipAudioCall == null){
+                return;
+            }
+
+            switch (action){
+                case Messages.TEL_TO_SIP_EXTRA_ANSWER:
+                    try {
+                        sipAudioCall.answerCall(30);
+                        sipAudioCall.startAudio();
+                    } catch (SipException se){
+                        se.printStackTrace();
+                    }
+                    break;
+
+                case Messages.TEL_TO_SIP_EXTRA_DISCONNECT:
+                    try {
+                        sipAudioCall.endCall();
+                    } catch (SipException se){
+                        se.printStackTrace();
+                    }
+                    break;
+
+                case Messages.TEL_TO_SIP_EXTRA_REJECT:
+                    try {
+                        sipAudioCall.endCall();
+                    } catch (SipException se){
+                        se.printStackTrace();
+                    }
+                    break;
+
+                case Messages.TEL_TO_SIP_EXTRA_HOLD:
+                    try {
+                        sipAudioCall.holdCall(30);
+                    } catch (SipException se){
+                        se.printStackTrace();
+                    }
+                    break;
+
+                case Messages.TEL_TO_SIP_EXTRA_UNHOLD:
+                    try {
+                        sipAudioCall.continueCall(30);
+                    } catch (SipException se){
+                        se.printStackTrace();
+                    }
+                    break;
+            }
+
+        }
+    };
+
+
+    private SipAudioCall.Listener mCallListener = new SipAudioCall.Listener() {
+        @Override
+        public void onReadyToCall(SipAudioCall call) {
+            super.onReadyToCall(call);
+            Log.d(TAG, "onReadyToCall");
+        }
+
+        @Override
+        public void onCalling(SipAudioCall call) {
+            super.onCalling(call);
+            Log.d(TAG, "onCalling");
+        }
+
+        @Override
+        public void onRinging(SipAudioCall call, SipProfile caller) {
+            super.onRinging(call, caller);
+            Log.d(TAG, "onRinging");
+        }
+
+        @Override
+        public void onRingingBack(SipAudioCall call) {
+            super.onRingingBack(call);
+            Log.d(TAG, "onRingingBack");
+        }
+
+        @Override
+        public void onCallEstablished(SipAudioCall call) {
+            super.onCallEstablished(call);
+            Log.d(TAG, "onCallEstablished");
+        }
+
+        @Override
+        public void onCallEnded(SipAudioCall call) {
+            Log.d(TAG, "onCallEnded");
+            super.onCallEnded(call);
+            sendLocalBroadcast(Messages.SIP_TO_TEL_EXTRA_END_CALL, call);
+            removeCall(call);
+        }
+
+        @Override
+        public void onCallBusy(SipAudioCall call) {
+            super.onCallBusy(call);
+            Log.d(TAG, "onCallBusy");
+        }
+
+        @Override
+        public void onCallHeld(SipAudioCall call) {
+            super.onCallHeld(call);
+            Log.d(TAG, "onCallHeld");
+        }
+
+        @Override
+        public void onError(SipAudioCall call, int errorCode, String errorMessage) {
+            super.onError(call, errorCode, errorMessage);
+            Log.d(TAG, "onError=> errorCode: "+errorCode+" | errorMessage: "+errorMessage);
+        }
+
+        @Override
+        public void onChanged(SipAudioCall call) {
+            Log.d(TAG, "onChanged");
+            super.onChanged(call);
+        }
+    };
+
+
+    public void sendLocalBroadcast(int action, SipAudioCall sipAudioCall){
+        Log.d(TAG, "sendLocalBroadcast: callId: "+sipAudioCallMap.get(sipAudioCall));
+        Intent intent = new Intent(Protocol.INFO_BROADCAST_SIP_TO_TEL);
+        intent.putExtra(Messages.TAG_SIP_TO_TEL_EXTRA, action);
+        intent.putExtra(Messages.TAG_SIP_TO_TEL_CALL_ID, sipAudioCallMap.get(sipAudioCall));
+        LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
+    }
+
+
+    public static void sipIncomingCall(Context context, Intent incomingCallIntent) {
+        //open incoming call screen
+        Intent serviceIntent = new Intent(context, SipService.class);
+        serviceIntent.setAction(Protocol.ACTION_GOT_INCOMING_CALL);
+        serviceIntent.putExtra(Protocol.INFO_INCOMING_CALL_INTENT, incomingCallIntent);
+        context.startService(serviceIntent);
+    }
+
+    public void incomingCall(Intent incomingCallIntent) {
         if (sipManager == null)
             return;
 
         try {
-            final SipAudioCall sipAudioCall = sipManager.takeAudioCall(incomingCallIntent, new SipAudioCall.Listener() {
-                @Override
-                public void onReadyToCall(SipAudioCall call) {
-                    super.onReadyToCall(call);
-                    Log.d(TAG, "onReadyToCall");
-                }
-
-                @Override
-                public void onCalling(SipAudioCall call) {
-                    super.onCalling(call);
-                    Log.d(TAG, "onCalling");
-                }
-
-                @Override
-                public void onRinging(SipAudioCall call, SipProfile caller) {
-                    super.onRinging(call, caller);
-                    Log.d(TAG, "onRinging");
-                }
-
-                @Override
-                public void onRingingBack(SipAudioCall call) {
-                    super.onRingingBack(call);
-                    Log.d(TAG, "onRingingBack");
-                }
-
-                @Override
-                public void onCallEstablished(SipAudioCall call) {
-                    super.onCallEstablished(call);
-                    Log.d(TAG, "onCallEstablished");
-                }
-
-                @Override
-                public void onCallEnded(SipAudioCall call) {
-                    super.onCallEnded(call);
-                    Log.d(TAG, "onCallEnded");
-                    sendLocalBroadcast(Messages.SIP_TO_TEL_EXTRA_END_CALL);
-                    LocalBroadcastManager.getInstance(context).unregisterReceiver(callScreenEventsReceiver);
-                }
-
-                @Override
-                public void onCallBusy(SipAudioCall call) {
-                    super.onCallBusy(call);
-                    Log.d(TAG, "onCallBusy");
-                }
-
-                @Override
-                public void onCallHeld(SipAudioCall call) {
-                    super.onCallHeld(call);
-                    Log.d(TAG, "onCallHeld");
-                }
-
-                @Override
-                public void onError(SipAudioCall call, int errorCode, String errorMessage) {
-                    super.onError(call, errorCode, errorMessage);
-                    Log.d(TAG, "onError=> errorCode: "+errorCode+" | errorMessage: "+errorMessage);
-                }
-
-                @Override
-                public void onChanged(SipAudioCall call) {
-                    super.onChanged(call);
-                    Log.d(TAG, "onChanged");
-                }
-
-                public void sendLocalBroadcast(int action){
-                    Intent intent = new Intent(Protocol.INFO_BROADCAST_SIP_TO_TEL);
-                    intent.putExtra(Messages.TAG_SIP_TO_TEL_EXTRA, action);
-                    LocalBroadcastManager.getInstance(context).sendBroadcast(intent);
-                }
-            });
-
-
-            callScreenEventsReceiver = new BroadcastReceiver() {
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    Log.d(TAG, "callScreenEventsReceiver: received!");
-                    int extra = intent.getIntExtra(Messages.TAG_TEL_TO_SIP_EXTRA, -1);
-                    switch (extra){
-                        case Messages.TEL_TO_SIP_EXTRA_ANSWER:
-                            try {
-                                sipAudioCall.answerCall(30);
-                                sipAudioCall.startAudio();
-                            } catch (SipException se){
-                                se.printStackTrace();
-                            }
-                            break;
-
-                        case Messages.TEL_TO_SIP_EXTRA_DISCONNECT:
-                            try {
-                                sipAudioCall.endCall();
-                            } catch (SipException se){
-                                se.printStackTrace();
-                            }
-                            break;
-
-                        case Messages.TEL_TO_SIP_EXTRA_REJECT:
-                            try {
-                                sipAudioCall.endCall();
-                            } catch (SipException se){
-                                se.printStackTrace();
-                            }
-                            break;
-
-                        case Messages.TEL_TO_SIP_EXTRA_HOLD:
-                            try {
-                                sipAudioCall.holdCall(30);
-                            } catch (SipException se){
-                                se.printStackTrace();
-                            }
-                            break;
-
-                        case Messages.TEL_TO_SIP_EXTRA_UNHOLD:
-                            try {
-                                sipAudioCall.continueCall(30);
-                            } catch (SipException se){
-                                se.printStackTrace();
-                            }
-                            break;
-                    }
-
-                }
-            };
-
-            LocalBroadcastManager.getInstance(context).registerReceiver(
-                    callScreenEventsReceiver, new IntentFilter(Protocol.INFO_BROADCAST_TEL_TO_SIP));
-
+            String callId = sipManager.getSessionFor(incomingCallIntent).getCallId();
+            final SipAudioCall sipAudioCall = sipManager.takeAudioCall(incomingCallIntent, mCallListener);
+            addCall(callId, sipAudioCall);
             //open incoming call screen
-            Intent intent = new Intent(context, SipService.class);
+            Intent intent = new Intent(mContext, SipService.class);
             intent.setAction(Protocol.ACTION_INCOMING_CALL);
             intent.putExtra(EXTRA_REMOTE_PEER, sipAudioCall.getPeerProfile().getUriString());
-            context.startService(intent);
+            intent.putExtra(EXTRA_CALL_ID, callId);
+            mContext.startService(intent);
         } catch (SipException se) {
             se.printStackTrace();
         }
@@ -289,6 +322,23 @@ public class SipService extends IntentService {
 //        intent.putExtra(EXTRA_REMOTE_PEER, "sip:6001@192.168.0.45");
 //        context.startService(intent);
 
+    }
+
+    private List<SipAudioCall> getCalls(){
+        Log.d(TAG, "getCalls -> mCalls: "+mCalls.size());
+        return mCalls;
+    }
+
+    private void addCall(String callId, SipAudioCall sipAudioCall){
+        sipAudioCallMap.put(sipAudioCall, callId);
+        callIdMap.put(callId, sipAudioCall);
+        mCalls.add(sipAudioCall);
+        Log.d(TAG, "addCall -> "+sipAudioCall.getPeerProfile().getUriString() +" | mCalls: "+mCalls.size());
+    }
+
+    private void removeCall(SipAudioCall sipAudioCall){
+        Log.d(TAG, "removeCall -> "+sipAudioCall.getPeerProfile().getUriString());
+        mCalls.remove(sipAudioCall);
     }
 
 
@@ -302,6 +352,17 @@ public class SipService extends IntentService {
         intent.setAction(Protocol.ACTION_OUTGOING_CALL);
         intent.putExtra(EXTRA_REMOTE_PEER, uri);
         context.startService(intent);
+    }
+
+    private void registerCallScreenReceiver(){
+        Log.d(TAG, "registerCallScreenReceiver...");
+        LocalBroadcastManager.getInstance(getApplicationContext()).registerReceiver(
+                mCallScreenEventsReceiver, new IntentFilter(Protocol.INFO_BROADCAST_TEL_TO_SIP));
+    }
+
+    private void unRegisterCallScreenReceiver(){
+        LocalBroadcastManager.getInstance(getApplicationContext()).unregisterReceiver(mCallScreenEventsReceiver);
+        Log.d(TAG, "unRegisterCallScreenReceiver...");
     }
 
 
@@ -327,17 +388,45 @@ public class SipService extends IntentService {
                 handleRegisterSipAccount();
             } else if (Protocol.ACTION_UNREGISTER_SIP_ACCOUNT.equals(action)){
                 handleUnregisterSipAccount();
+            } else if (Protocol.ACTION_GOT_INCOMING_CALL.equals(action)) {
+                Intent incomingIntent = intent.getParcelableExtra(Protocol.INFO_INCOMING_CALL_INTENT);
+                incomingCall(incomingIntent);
             } else if (Protocol.ACTION_INCOMING_CALL.equals(action)) {
+                final String callId = intent.getStringExtra(EXTRA_CALL_ID);
                 final String remotePeer = intent.getStringExtra(EXTRA_REMOTE_PEER);
-                sendIncomingCallIntent(getApplicationContext(), Uri.parse(remotePeer));
+                fireIncomingCall(getApplicationContext(), callId, Uri.parse(remotePeer));
             } else if (Protocol.ACTION_OUTGOING_CALL.equals(action)){
                 final String remotePeer = intent.getStringExtra(EXTRA_REMOTE_PEER);
-                sendOutgoingCallIntent(getApplicationContext(), remotePeer);
+                fireOutgoingCall(getApplicationContext(), remotePeer);
             } else if (Protocol.ACTION_TEST.equals(action)){
                 handleCheckCallingAccounts();
             }
         }
     }
+
+
+    public static boolean isEnabledCallingAccount(Context context){
+        if (Build.VERSION.SDK_INT < 23){
+            return false;
+        }
+
+        try {
+
+            TelecomManager telecomManager =
+                    (TelecomManager) context.getSystemService(Context.TELECOM_SERVICE);
+
+            PhoneAccountHandle phoneAccountHandle = new PhoneAccountHandle(
+                    new ComponentName(context, SIPerConnectionService.class),
+                    Protocol.ID_CALL_PROVIDER);
+
+            PhoneAccount phoneAccount = telecomManager.getPhoneAccount(phoneAccountHandle);
+
+            return phoneAccount.isEnabled();
+        }catch (Exception e){
+            return false;
+        }
+    }
+
 
     /**
      * Handle action ACTION_REGISTER_CALLING_ACCOUNT in the provided background thread with the provided
@@ -352,29 +441,51 @@ public class SipService extends IntentService {
                     (TelecomManager) getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
 
             PhoneAccountHandle phoneAccountHandle = new PhoneAccountHandle(
-                    new ComponentName(getApplicationContext(), SipTelConnectionService.class),
+                    new ComponentName(getApplicationContext(), SIPerConnectionService.class),
                     Protocol.ID_CALL_PROVIDER);
 
+            int capabilities = PhoneAccount.CAPABILITY_CALL_PROVIDER |
+                    PhoneAccount.CAPABILITY_CONNECTION_MANAGER |
+                    PhoneAccount.CAPABILITY_CALL_SUBJECT;
+            int color = PhoneAccount.NO_HIGHLIGHT_COLOR;
+            final ArrayList<String> supportedUriSchemes = new ArrayList<String>();
+            supportedUriSchemes.add(PhoneAccount.SCHEME_SIP);
+            supportedUriSchemes.add(PhoneAccount.SCHEME_TEL);
 
-            //Register phone account
-            telecomManager.registerPhoneAccount(PhoneAccount.builder(
+
+            //SIPer phone account
+            PhoneAccount phoneAccount = PhoneAccount.builder(
                     phoneAccountHandle,
                     accName)
-                    .setAddress(Uri.parse(shortDesc))
-                    .setSubscriptionAddress(Uri.parse(shortDesc))
-                    .setCapabilities(PhoneAccount.CAPABILITY_CALL_PROVIDER |
-                            PhoneAccount.CAPABILITY_VIDEO_CALLING)
-                    .setHighlightColor(Color.GREEN)
-                    // TODO: Add icon tint (Color.RED)
+                    .setAddress(Uri.parse("extension@domain.com")) //it's very important to show in account selection popup
+                    .setSubscriptionAddress(Uri.parse("subscription@domain.com"))
+                    .setCapabilities(capabilities)
+                    .setHighlightColor(color)
                     .setIcon(Icon.createWithResource(
                             context, R.drawable.icon))
                     .setShortDescription(shortDesc)
-                    .setSupportedUriSchemes(Arrays.asList("tel, sip"))
-                    .build());
+                    .setSupportedUriSchemes(supportedUriSchemes)
+                    .build();
+
+
+//            PhoneAccount phoneAccount = SipUtil.createPhoneAccount(context); //test
+
+            //Register phone account
+            telecomManager.registerPhoneAccount(phoneAccount);
 
             intent.putExtra(Messages.TAG_CALLING_ACCOUNT_STATUS, Messages.CALLING_ACCOUNT_REGISTER_STATUS_SUCCESS);
             PreferenceUtil.setCallingAccount(true);
             Log.i(TAG, "registerPhoneAccount...");
+
+
+            //change default dialer
+            Intent cd = new Intent(TelecomManager.ACTION_CHANGE_DEFAULT_DIALER);
+            cd.putExtra(TelecomManager.EXTRA_CHANGE_DEFAULT_DIALER_PACKAGE_NAME,
+                    context.getPackageName());
+            cd.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(cd);
+
+
         } catch (SecurityException se) {
             se.printStackTrace();
             intent.putExtra(Messages.TAG_CALLING_ACCOUNT_STATUS, Messages.CALLING_ACCOUNT_REGISTER_STATUS_FAIL);
@@ -398,8 +509,12 @@ public class SipService extends IntentService {
                     (TelecomManager) getApplicationContext().getSystemService(Context.TELECOM_SERVICE);
 
             PhoneAccountHandle phoneAccountHandle = new PhoneAccountHandle(
-                    new ComponentName(getApplicationContext(), SipTelConnectionService.class),
+                    new ComponentName(getApplicationContext(), SIPerConnectionService.class),
                     Protocol.ID_CALL_PROVIDER);
+
+//            Context context = getApplicationContext();
+//            PhoneAccountHandle phoneAccountHandle = SipUtil.getAccountHandle(context); //test
+
 
             //Unregister phone account
             telecomManager.unregisterPhoneAccount(phoneAccountHandle);
@@ -504,6 +619,9 @@ public class SipService extends IntentService {
             Log.i(TAG, "isOpened: " + sipManager.isOpened(sipProfile.getUriString()));
             broadcastIntent.putExtra(Messages.TAG_SIP_ACCOUNT_STATUS, Messages.SIP_ACCOUNT_CREATE_STATUS_SUCCESS);
             PreferenceUtil.setSipAccount(true);
+
+            //register call screen event receiver
+            registerCallScreenReceiver();
         } catch (ParseException pe) {
             Log.d(TAG, "Connection Error.");
             pe.printStackTrace();
@@ -570,6 +688,7 @@ public class SipService extends IntentService {
             }
         }, delay);
 
+        unRegisterCallScreenReceiver();
     }
 
 
@@ -730,18 +849,20 @@ public class SipService extends IntentService {
      *
      * @param context The current context.
      */
-    public void sendIncomingCallIntent(Context context, Uri handle) {
+    public void fireIncomingCall(Context context, String callId, Uri handle) {
         PhoneAccountHandle phoneAccount = new PhoneAccountHandle(
-                new ComponentName(context, SipTelConnectionService.class),
+                new ComponentName(context, SIPerConnectionService.class),
                 Protocol.ID_CALL_PROVIDER);
         Bundle extras = new Bundle();
         if (handle != null) {
-            extras.putParcelable(SipTelConnectionService.EXTRA_HANDLE, handle);
+            extras.putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, handle);
+            extras.putString(Messages.TAG_SIP_TO_TEL_CALL_ID, callId);
         }
         final TelecomManager telecomManager =
                 (TelecomManager) getSystemService(Context.TELECOM_SERVICE);
 
         try {
+            Log.i(TAG, "SIPer incoming call from "+handle+" | mCalls: "+mCalls.size());
             telecomManager.addNewIncomingCall(phoneAccount, extras);
         }catch (SecurityException se){
             Log.d(TAG, "Please Enable Account from Phone Setting");
@@ -754,7 +875,7 @@ public class SipService extends IntentService {
 
             //reject call for security exception
             Intent intent = new Intent(Protocol.INFO_BROADCAST_TEL_TO_SIP);
-            intent.putExtra(Messages.TAG_TEL_TO_SIP_EXTRA, Messages.TEL_TO_SIP_EXTRA_REJECT);
+            intent.putExtra(Messages.TAG_TEL_TO_SIP_ACTION, Messages.TEL_TO_SIP_EXTRA_REJECT);
             LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
         }
     }
@@ -765,9 +886,9 @@ public class SipService extends IntentService {
      *
      * @param context The current context.
      */
-    public void sendOutgoingCallIntent(Context context, String handle) {
+    public void fireOutgoingCall(Context context, String sipAddress) {
         PhoneAccountHandle phoneAccountHandle = new PhoneAccountHandle(
-                new ComponentName(context, SipTelConnectionService.class),
+                new ComponentName(context, SIPerConnectionService.class),
                 Protocol.ID_CALL_PROVIDER);
 
         final TelecomManager telecomManager =
@@ -784,28 +905,53 @@ public class SipService extends IntentService {
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        Log.d(TAG, "defaultDialer: "+telecomManager.getDefaultDialerPackage());
 
+        try {
+            Log.d(TAG, "defaultDialer: " + telecomManager.getDefaultOutgoingPhoneAccount(PhoneAccount.SCHEME_SIP));
+            final Intent intent = new CallIntentBuilder(sipAddress)
+                    .setCallInitiationType(Messages.CALL_INITIATION_TYPE_NATIVE)
+                    .setPhoneAccountHandle(phoneAccountHandle)
+                    .setIsVideoCall(false)
+                    .build();
 
-        telecomManager.placeCall(Uri.fromParts(PhoneAccount.SCHEME_SIP,
-                handle, null), createCallIntentExtras(phoneAccountHandle));
+            Log.d(TAG, "getExtras: " + intent.getExtras());
+            Log.d(TAG, "getData: " + intent.getData());
+            telecomManager.placeCall(intent.getData(), intent.getExtras());
+
+        }catch (SecurityException se){
+            se.printStackTrace();
+        }
     }
 
-    private Bundle createCallIntentExtras(PhoneAccountHandle phoneAccountHandle) {
-//        Bundle extras = new Bundle();
-//        extras.putString("number", "01717717488");
 
-        Bundle intentExtras = new Bundle();
-//        intentExtras.putBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, extras);
-        intentExtras.putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, phoneAccountHandle);
-        Log.i("Santos xtr", intentExtras.toString());
-        return intentExtras;
+
+    private static void openPhoneAccountSettingsActivity(Context context){
+
+        //check the current activity name
+        /*ActivityManager am = (ActivityManager) this.getSystemService(ACTIVITY_SERVICE);
+        List<ActivityManager.RunningTaskInfo> taskInfo = am.getRunningTasks(1);
+        Log.d(TAG, "CURRENT Activity ::" + taskInfo.get(0).topActivity.getClassName());*/
+
+
+        //open setting activity to enable account manually
+        final Intent sipSettingsIntent = new Intent();
+        final String sipSettingsComponentName;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+//            sipSettingsComponentName = "com.android.phone/.settings.PhoneAccountSettingsActivity";
+            sipSettingsComponentName = "com.android.server.telecom/.settings.EnableAccountPreferenceActivity";
+        } else {
+            sipSettingsComponentName = "com.android.phone/.sip.SipSettings";
+        }
+        final ComponentName sipSettingsComponent = ComponentName.unflattenFromString(sipSettingsComponentName);
+        sipSettingsIntent.setComponent(sipSettingsComponent);
+        sipSettingsIntent.setAction("android.intent.action.MAIN");
+        sipSettingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(sipSettingsIntent);
+        } catch(final Exception e) {
+            Log.e(TAG, "Error starting intent", e);
+        }
     }
-
-
-
-
-
 
     //// TEST
     public static void checkCallingAccounts(Context context){

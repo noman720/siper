@@ -26,7 +26,7 @@ import java.util.Map;
 
 public class MySipTelConnectionServiceBack extends ConnectionService {
 
-    private static final String TAG = "SipTelConnectionService";
+    private static final String TAG = "SIPerConnectionService";
 
     /**
      * Intent extra used to pass along the video state for a new test sipAudioCall.

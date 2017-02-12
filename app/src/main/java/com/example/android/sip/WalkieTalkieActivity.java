@@ -220,7 +220,7 @@ public class WalkieTalkieActivity extends Activity implements View.OnTouchListen
      */
     public void initiateCall() {
 //        placeCall();
-//        sendIncomingCallIntent(getApplicationContext(), null, VideoProfile.STATE_AUDIO_ONLY);
+//        fireIncomingCall(getApplicationContext(), null, VideoProfile.STATE_AUDIO_ONLY);
 
         updateStatus(sipAddress);
 
