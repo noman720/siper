@@ -88,6 +88,15 @@
             </intent-filter>
         </service>
 
+        <!--Testing service for remote connection, let's another voip calling connection-->
+        <!--<service-->
+            <!--android:name="com.example.android.sip.TestSipTelConnectionService"-->
+            <!--android:permission="android.permission.BIND_TELECOM_CONNECTION_SERVICE">-->
+            <!--<intent-filter>-->
+                <!--<action android:name="android.telecom.ConnectionService" />-->
+            <!--</intent-filter>-->
+        <!--</service>-->
+
         <service
             android:name=".service.SipService"
             android:exported="false"></service>

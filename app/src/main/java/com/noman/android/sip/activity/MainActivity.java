@@ -50,6 +50,7 @@ import com.noman.android.sip.util.Messages;
 import com.noman.android.sip.util.PreferenceUtil;
 import com.noman.android.sip.util.Protocol;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.List;
 
@@ -729,6 +730,14 @@ public class MainActivity extends Activity implements View.OnTouchListener {
         sipSettingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             startActivity(sipSettingsIntent);
+            Class clazz = Class.forName("com.android.server.telecom.settings.EnableAccountPreferenceActivity");
+
+            //test enable account programmatically
+            for (Method method: clazz.getMethods()){
+
+                Log.d("ENABLE_CALLING_ACC", "toGenericString"+method.toGenericString()+" | name: "+method.getName());
+            }
+
         } catch(final Exception e) {
             Log.e(TAG, "Error starting intent", e);
         }

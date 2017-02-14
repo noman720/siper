@@ -24,7 +24,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class MySipTelConnectionServiceBack extends ConnectionService {
+public class TestSipTelConnectionService extends ConnectionService {
 
     private static final String TAG = "SIPerConnectionService";
 
@@ -34,7 +34,7 @@ public class MySipTelConnectionServiceBack extends ConnectionService {
     public static final String EXTRA_HANDLE = "extra_handle";
 
 
-    public MySipTelConnectionServiceBack() {
+    public TestSipTelConnectionService() {
     }
 
     public final class ManagedConnection extends Connection {

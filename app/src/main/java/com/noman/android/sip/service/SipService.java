@@ -160,10 +160,10 @@ public class SipService extends IntentService {
     private BroadcastReceiver mCallScreenEventsReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            Log.d(TAG, "callScreenEventsReceiver: received!");
+//            Log.d(TAG, "callScreenEventsReceiver: received!");
             int action = intent.getIntExtra(Messages.TAG_TEL_TO_SIP_ACTION, -1);
             String callId = intent.getStringExtra(Messages.TAG_TEL_TO_SIP_CALL_ID);
-            Log.d(TAG, "callScreenEventsReceiver: callId: "+callId);
+            Log.d(TAG, "callScreenEventsReceiver: action: "+action+" | callId: "+callId);
             SipAudioCall sipAudioCall = callIdMap.get(callId);
             if (sipAudioCall == null){
                 return;
@@ -198,6 +198,7 @@ public class SipService extends IntentService {
                 case Messages.TEL_TO_SIP_EXTRA_HOLD:
                     try {
                         sipAudioCall.holdCall(30);
+                        Log.d(TAG, "holdCall --> "+sipAudioCall.getPeerProfile().getUserName());
                     } catch (SipException se){
                         se.printStackTrace();
                     }
@@ -244,13 +245,14 @@ public class SipService extends IntentService {
         @Override
         public void onCallEstablished(SipAudioCall call) {
             super.onCallEstablished(call);
-            Log.d(TAG, "onCallEstablished");
+            Log.d(TAG, "onCallEstablished: "+call.getPeerProfile().getUserName() +"(" +SipSession.State.toString(call.getState())+")");
+            Log.d(TAG, "isHold : "+call.isOnHold());
         }
 
         @Override
         public void onCallEnded(SipAudioCall call) {
-            Log.d(TAG, "onCallEnded");
             super.onCallEnded(call);
+            Log.d(TAG, "onCallEnded: "+call.getPeerProfile().getUserName() +"(" +SipSession.State.toString(call.getState())+")");
             sendLocalBroadcast(Messages.SIP_TO_TEL_EXTRA_END_CALL, call);
             removeCall(call);
         }
@@ -264,7 +266,8 @@ public class SipService extends IntentService {
         @Override
         public void onCallHeld(SipAudioCall call) {
             super.onCallHeld(call);
-            Log.d(TAG, "onCallHeld");
+            Log.d(TAG, "onCallHeld: "+call.getPeerProfile().getUserName() +"(" +SipSession.State.toString(call.getState())+")");
+            Log.d(TAG, "isHold : "+call.isOnHold());
         }
 
         @Override
@@ -275,8 +278,13 @@ public class SipService extends IntentService {
 
         @Override
         public void onChanged(SipAudioCall call) {
-            Log.d(TAG, "onChanged");
             super.onChanged(call);
+            Log.d(TAG, "onChanged: "+call.getPeerProfile().getUserName() +"(" +SipSession.State.toString(call.getState())+")");
+            Log.d(TAG, "isHold : "+call.isOnHold());
+
+            if (call.getState() == SipSession.State.IN_CALL){
+                sendLocalBroadcast(Messages.SIP_TO_TEL_EXTRA_HOLD_CALL, call, call.isOnHold());
+            }
         }
     };
 
@@ -284,8 +292,17 @@ public class SipService extends IntentService {
     public void sendLocalBroadcast(int action, SipAudioCall sipAudioCall){
         Log.d(TAG, "sendLocalBroadcast: callId: "+sipAudioCallMap.get(sipAudioCall));
         Intent intent = new Intent(Protocol.INFO_BROADCAST_SIP_TO_TEL);
-        intent.putExtra(Messages.TAG_SIP_TO_TEL_EXTRA, action);
+        intent.putExtra(Messages.TAG_SIP_TO_TEL_ACTION, action);
         intent.putExtra(Messages.TAG_SIP_TO_TEL_CALL_ID, sipAudioCallMap.get(sipAudioCall));
+        LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
+    }
+
+    public void sendLocalBroadcast(int action, SipAudioCall sipAudioCall, boolean isHold){
+        Log.d(TAG, "sendLocalBroadcast: callId: "+sipAudioCallMap.get(sipAudioCall));
+        Intent intent = new Intent(Protocol.INFO_BROADCAST_SIP_TO_TEL);
+        intent.putExtra(Messages.TAG_SIP_TO_TEL_ACTION, action);
+        intent.putExtra(Messages.TAG_SIP_TO_TEL_CALL_ID, sipAudioCallMap.get(sipAudioCall));
+        intent.putExtra(Messages.TAG_SIP_TO_TEL_HOLD_STATE, isHold);
         LocalBroadcastManager.getInstance(getApplicationContext()).sendBroadcast(intent);
     }
 
@@ -370,6 +387,7 @@ public class SipService extends IntentService {
     protected void onHandleIntent(Intent intent) {
         if (intent != null) {
             final String action = intent.getAction();
+            Log.d(TAG, "onHandleIntent -> action: "+action);
             if (Protocol.ACTION_REGISTER_CALLING_ACCOUNT.equals(action)) {
                 final String accName = intent.getStringExtra(EXTRA_CALLING_ACC_NAME);
                 final String shortDesc = intent.getStringExtra(EXTRA_CALLING_ACC_DESC);

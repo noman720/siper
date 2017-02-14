@@ -28,9 +28,11 @@ public class Messages {
     public static final int CALL_INITIATION_TYPE_NATIVE = 100;
 
     //sip to tel extras
-    public static final String TAG_SIP_TO_TEL_EXTRA = "sip_to_tel_extra";
+    public static final String TAG_SIP_TO_TEL_ACTION = "sip_to_tel_action";
     public static final String TAG_SIP_TO_TEL_CALL_ID = "sip_to_tel_call_id";
+    public static final String TAG_SIP_TO_TEL_HOLD_STATE = "sip_to_tel_hold_state";
     public static final int SIP_TO_TEL_EXTRA_END_CALL = 1;
+    public static final int SIP_TO_TEL_EXTRA_HOLD_CALL = 2;
 
     //tel to sip extras
     public static final String TAG_TEL_TO_SIP_ACTION = "tel_to_sip_action";

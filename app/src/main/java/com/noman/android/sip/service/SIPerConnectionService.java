@@ -30,6 +30,7 @@ import com.noman.android.sip.util.Protocol;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 
 public class SIPerConnectionService extends ConnectionService {
@@ -58,8 +59,8 @@ public class SIPerConnectionService extends ConnectionService {
     private BroadcastReceiver mSipEventReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
-            Log.d(TAG, "mSipEventReceiver: received!");
-            int action = intent.getIntExtra(Messages.TAG_SIP_TO_TEL_EXTRA, -1);
+//            Log.d(TAG, "mSipEventReceiver: received!");
+            int action = intent.getIntExtra(Messages.TAG_SIP_TO_TEL_ACTION, -1);
             String callId = intent.getStringExtra(Messages.TAG_SIP_TO_TEL_CALL_ID);
             Log.d(TAG, "mSipEventReceiver: callId:"+callId);
             MyConnection connection = null;
@@ -80,6 +81,15 @@ public class SIPerConnectionService extends ConnectionService {
                     destroyCall(connection);
                     connection.destroy();
                     break;
+
+                case Messages.SIP_TO_TEL_EXTRA_HOLD_CALL:
+                    boolean holdState = intent.getBooleanExtra(Messages.TAG_SIP_TO_TEL_HOLD_STATE, false);
+                    if (holdState) {
+                        connection.setOnHold();
+                    } else {
+                        connection.setActive();
+                    }
+                    break;
             }
 
         }
@@ -88,6 +98,7 @@ public class SIPerConnectionService extends ConnectionService {
 
     final class MyConnection extends Connection {
         private final boolean mIsIncoming;
+        private boolean mIsActive = false;
         private String mCallId;
         MyConnection(boolean isIncoming) {
             mIsIncoming = isIncoming;
@@ -112,11 +123,20 @@ public class SIPerConnectionService extends ConnectionService {
             this.mCallId = mCallId;
         }
 
+        public void setLocalActive(boolean isActive){
+            mIsActive = isActive;
+        }
+
+        public boolean isLocalActive(){
+            return mIsActive;
+        }
+
         void startOutgoing() {
             setDialing();
             mHandler.postDelayed(new Runnable() {
                 @Override
                 public void run() {
+                    //auto recv
                     setActive();
 //                    activateCall(MyConnection.this);
                 }
@@ -135,9 +155,15 @@ public class SIPerConnectionService extends ConnectionService {
         /** ${inheritDoc} */
         @Override
         public void onAnswer(int videoState) {
-            log("Answered Call");
-            setActive();
+            log("Answered Call: "+getAddress().getSchemeSpecificPart());
+            //setActive(); //set active on response from sip
+            if (mCalls.size() > 1){
+                //hold previous call
+                holdInActiveCalls(this);
+            }
+
             sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_ANSWER);
+            setAsActive(this);
         }
 
         /** ${inheritDoc} */
@@ -158,7 +184,7 @@ public class SIPerConnectionService extends ConnectionService {
         /** ${inheritDoc} */
         @Override
         public void onDisconnect() {
-            log("Disconnected");
+            log("Disconnected: "+getAddress().getSchemeSpecificPart());
             setDisconnected(new DisconnectCause(DisconnectCause.REMOTE));
             destroyCall(this);
             destroy();
@@ -168,15 +194,19 @@ public class SIPerConnectionService extends ConnectionService {
         /** ${inheritDoc} */
         @Override
         public void onHold() {
-            log("Hold Call");
-            setOnHold();
-            sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_HOLD);
+            log("Hold Call: "+getAddress().getSchemeSpecificPart());
+            if (mCalls.size() > 1){
+                performSwitchCall(this);
+            }else {
+//            setOnHold();
+                sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_HOLD);
+            }
         }
 
         /** ${inheritDoc} */
         @Override
         public void onReject() {
-            log("Reject sipAudioCall");
+            log("Reject sipAudioCall: "+getAddress().getSchemeSpecificPart());
             setDisconnected(new DisconnectCause(DisconnectCause.REJECTED));
             destroyCall(this);
             destroy();
@@ -186,14 +216,14 @@ public class SIPerConnectionService extends ConnectionService {
         /** ${inheritDoc} */
         @Override
         public void onUnhold() {
-            log("Unhold Call");
-            setActive();
+            log("Unhold Call: "+getAddress().getSchemeSpecificPart());
+//            setActive();
             sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_UNHOLD);
         }
 
         @Override
         public void onStateChanged(int state) {
-            log("onStateChanged");
+            log("onStateChanged: "+getAddress().getSchemeSpecificPart());
             updateCallCapabilities();
             updateConferenceable();
         }
@@ -235,6 +265,8 @@ public class SIPerConnectionService extends ConnectionService {
                 call.onDisconnect();
             }
 
+            mCallConference = null;
+
         }
 
         @Override
@@ -259,6 +291,7 @@ public class SIPerConnectionService extends ConnectionService {
 
             //destroy conference
             destroy();
+            mCallConference = null;
         }
 
         @Override
@@ -376,7 +409,7 @@ public class SIPerConnectionService extends ConnectionService {
 
         PhoneAccountHandle accountHandle = request.getAccountHandle();
         ComponentName componentName = new ComponentName(getApplicationContext(), this.getClass());
-        Log.d(TAG, "onCreateOutgoingConnection => phoneAccountHandle: "+connectionManagerAccount+" | request: "+request);
+//        Log.d(TAG, "onCreateOutgoingConnection => phoneAccountHandle: "+connectionManagerAccount+" | request: "+request);
 
         Bundle extras = request.getExtras();
         String gatewayPackage = extras.getString(TelecomManager.GATEWAY_PROVIDER_PACKAGE);
@@ -384,10 +417,11 @@ public class SIPerConnectionService extends ConnectionService {
         log("gateway package [" + gatewayPackage + "], original handle [" +
                 originalHandle + "]");
 
-        Log.d(TAG, "onCreateOutgoingConnection initiationType: "+extras.getInt(Messages.TAG_CALL_INITIATION_TYPE, -1));
+//        Log.d(TAG, "onCreateOutgoingConnection initiationType: "+extras.getInt(Messages.TAG_CALL_INITIATION_TYPE, -1));
 
         if (accountHandle != null && componentName.equals(accountHandle.getComponentName())) {
             final MyConnection connection = new MyConnection(false);
+            setAsActive(connection);
             // Get the stashed intent extra that determines if this is a video sipAudioCall or audio sipAudioCall.
             Uri providedHandle = request.getAddress();
 
@@ -408,8 +442,8 @@ public class SIPerConnectionService extends ConnectionService {
         PhoneAccountHandle accountHandle = request.getAccountHandle();
         ComponentName componentName = new ComponentName(getApplicationContext(), this.getClass());
 
-        log("onCreateIncomingConnection conManager: "+connectionManagerAccount.getId()+" | componentName: "+connectionManagerAccount.getComponentName());
-        log("onCreateIncomingConnection request: "+request.getAccountHandle().getId()+" | componentName: "+request.getAccountHandle().getComponentName());
+//        log("onCreateIncomingConnection conManager: "+connectionManagerAccount.getId()+" | componentName: "+connectionManagerAccount.getComponentName());
+//        log("onCreateIncomingConnection request: "+request.getAccountHandle().getId()+" | componentName: "+request.getAccountHandle().getComponentName());
 
 
         if (accountHandle != null && componentName.equals(accountHandle.getComponentName())) {
@@ -493,9 +527,13 @@ public class SIPerConnectionService extends ConnectionService {
         int callCapabilities = 0;
         callCapabilities |= Connection.CAPABILITY_MUTE;
         callCapabilities |= Connection.CAPABILITY_SUPPORT_HOLD;
-        if (connection.getState() == Connection.STATE_ACTIVE || connection.getState() == Connection.STATE_HOLDING) {
-            log("getCallCapabilities(HOLD)");
-            callCapabilities |= Connection.CAPABILITY_HOLD;
+
+        //hold capability for only single call
+        if (totalCall == 1){
+            if (connection.getState() == Connection.STATE_ACTIVE || connection.getState() == Connection.STATE_HOLDING) {
+                log("getCallCapabilities(HOLD)");
+                callCapabilities |= Connection.CAPABILITY_HOLD;
+            }
         }
 
         if (totalCall > 1){
@@ -506,6 +544,55 @@ public class SIPerConnectionService extends ConnectionService {
         }
 
         return callCapabilities;
+    }
+
+    private void holdInActiveCalls(MyConnection activeCall){
+        for (MyConnection con : mCalls){
+            if (!Objects.equals(con, activeCall)){
+                con.sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_HOLD);
+            }
+        }
+    }
+
+    private void setAsActive(MyConnection connection){
+        for (MyConnection con : mCalls){
+            if (Objects.equals(con, connection)){
+                connection.setLocalActive(true);
+            } else {
+                connection.setLocalActive(false);
+            }
+        }
+    }
+
+    private MyConnection getActive(){
+        for (MyConnection con : mCalls){
+            if (con.isLocalActive()){
+                return con;
+            }
+        }
+
+        throw new NullPointerException("No active call found!");
+    }
+
+    private MyConnection getInActive(){
+        for (MyConnection con : mCalls){
+            if (!con.isLocalActive()){
+                return con;
+            }
+        }
+
+        throw new NullPointerException("No inactive call found!");
+    }
+
+
+    private void performSwitchCall(MyConnection activeConnection){
+        //hold active call
+        getActive().sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_HOLD);
+        //unhold in active call
+        getInActive().sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_UNHOLD);
+
+        //change active call state
+        setAsActive(activeConnection);
     }
 
     private void setAddress(Connection connection, Uri address) {
