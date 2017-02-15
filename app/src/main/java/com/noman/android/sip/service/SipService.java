@@ -207,6 +207,7 @@ public class SipService extends IntentService {
                 case Messages.TEL_TO_SIP_EXTRA_UNHOLD:
                     try {
                         sipAudioCall.continueCall(30);
+                        Log.d(TAG, "unHoldCall --> "+sipAudioCall.getPeerProfile().getUserName());
                     } catch (SipException se){
                         se.printStackTrace();
                     }
@@ -350,11 +351,11 @@ public class SipService extends IntentService {
         sipAudioCallMap.put(sipAudioCall, callId);
         callIdMap.put(callId, sipAudioCall);
         mCalls.add(sipAudioCall);
-        Log.d(TAG, "addCall -> "+sipAudioCall.getPeerProfile().getUriString() +" | mCalls: "+mCalls.size());
+//        Log.d(TAG, "addCall -> "+sipAudioCall.getPeerProfile().getUriString() +" | mCalls: "+mCalls.size());
     }
 
     private void removeCall(SipAudioCall sipAudioCall){
-        Log.d(TAG, "removeCall -> "+sipAudioCall.getPeerProfile().getUriString());
+//        Log.d(TAG, "removeCall -> "+sipAudioCall.getPeerProfile().getUriString());
         mCalls.remove(sipAudioCall);
     }
 

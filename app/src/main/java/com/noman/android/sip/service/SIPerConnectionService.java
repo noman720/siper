@@ -163,7 +163,6 @@ public class SIPerConnectionService extends ConnectionService {
             }
 
             sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_ANSWER);
-            setAsActive(this);
         }
 
         /** ${inheritDoc} */
@@ -211,6 +210,7 @@ public class SIPerConnectionService extends ConnectionService {
             destroyCall(this);
             destroy();
             sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_REJECT);
+            super.onReject();
         }
 
         /** ${inheritDoc} */
@@ -421,7 +421,6 @@ public class SIPerConnectionService extends ConnectionService {
 
         if (accountHandle != null && componentName.equals(accountHandle.getComponentName())) {
             final MyConnection connection = new MyConnection(false);
-            setAsActive(connection);
             // Get the stashed intent extra that determines if this is a video sipAudioCall or audio sipAudioCall.
             Uri providedHandle = request.getAddress();
 
@@ -491,6 +490,7 @@ public class SIPerConnectionService extends ConnectionService {
 
     private void addCall(MyConnection connection) {
         mCalls.add(connection);
+        setAsActive(connection);
         updateCallCapabilities();
         updateConferenceable();
     }
@@ -557,9 +557,9 @@ public class SIPerConnectionService extends ConnectionService {
     private void setAsActive(MyConnection connection){
         for (MyConnection con : mCalls){
             if (Objects.equals(con, connection)){
-                connection.setLocalActive(true);
+                con.setLocalActive(true);
             } else {
-                connection.setLocalActive(false);
+                con.setLocalActive(false);
             }
         }
     }
@@ -586,13 +586,15 @@ public class SIPerConnectionService extends ConnectionService {
 
 
     private void performSwitchCall(MyConnection activeConnection){
+        Log.d(TAG, "performSwitchCall :: activeConnection: "+activeConnection.getAddress());
         //hold active call
         getActive().sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_HOLD);
         //unhold in active call
         getInActive().sendLocalBroadcast(Messages.TEL_TO_SIP_EXTRA_UNHOLD);
 
         //change active call state
-        setAsActive(activeConnection);
+        setAsActive(getInActive());
+        Log.d(TAG, "getActive: "+getActive().getAddress());
     }
 
     private void setAddress(Connection connection, Uri address) {
